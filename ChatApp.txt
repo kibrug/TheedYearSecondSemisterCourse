@@ -1,0 +1,235 @@
+The architecture of the client application
+The client application uses the standard structure for a JavaFX FXML application. There is a main class that launches the application, and FXML file for the GUI, and a controller class. In addition to these classes there is also a ChatGateway class. The purpose of this class is to act as a gateway to the network and the server.
+
+Here is an outline of the structure of the ChatGateway class:
+
+
+public class ChatGateway implements ChatConstants {
+
+    private PrintWriter outputToServer;
+    private BufferedReader inputFromServer;
+    private TextArea textArea;
+
+    // Establish the connection to the server.
+    public ChatGateway(TextArea textArea) {}
+
+    // Start the chat by sending in the user's handle.
+    public void sendHandle(String handle) {}
+
+    // Send a new comment to the server.
+    public void sendComment(String comment) {}
+
+    // Ask the server to send us a count of how many comments are
+    // currently in the transcript.
+    public int getCommentCount() {}
+
+    // Fetch comment n of the transcript from the server.
+    public String getComment(int n) {}
+}
+
+
+The constructor for this class will open a socket connection to the chat server and prepare a couple of text streams for reading and writing. These are stored in the outputToServer and inputFromServer member variables. In addition, the class also stores a link to the TextArea in the main window so that it can write error messages in case of an exception.
+
+The remaining four methods implement all of the communication with the server. There are methods to send new comments to the server and methods to fetch comments from the server.
+
+The chat application users a request-response protocol to manage communication between the clients and the server. In every interaction between a client and the server, the client will initiate the interaction by sending a code number to the server that indicates what the client wants to do. The code numbers for these interactions are defined in a separate interface, the ChatConstants interface:
+
+
+
+public interface ChatConstants {
+    public static int SEND_HANDLE = 1;
+    public static int SEND_COMMENT = 2;
+    public static int GET_COMMENT_COUNT = 3;
+    public static int GET_COMMENT = 4;
+}
+
+
+Since the ChatGateway class implements this interface, it will be able to see and use these constant definitions.
+
+Here is an example of a typical interaction between the ChatGateway and the server. This is the method to fetch one of the comments from the chat transcript.
+
+public String getComment(int n) {
+    outputToServer.println(GET_COMMENT);
+    outputToServer.println(n);
+    outputToServer.flush();
+    String comment = "";
+    try {
+        comment = inputFromServer.readLine();
+    } catch (IOException ex) {
+        Platform.runLater(() -> textArea.appendText("Error in getComment: " + ex.toString() + "\n"));
+    }
+    return comment;
+}
+
+
+The client initiates this interaction by sending over the code number that indicates that the client wishes to get a comment. Following the code number the client sends the number n of the comment they want. The server will respond to this request by sending a single line of text containing the comment.
+
+The transcript thread
+Because this is a multi-user network application, the server is going to be receiving comments from many users at once. As each comment comes in, it gets added to the transcript on the server. The client applications have to check back periodically with the server to see if any new comments have arrived. If new comments are available, the clients will have to ask the server to send the comments over and then display those new comments in the GUI.
+
+Checking a server periodically to see if new information is available is a classic example of a task for a thread. In the client application there is a runnable class that carries out this activity:
+
+
+
+class TranscriptCheck implements Runnable, ChatConstants {
+    private ChatGateway gateway; // Gateway to the server
+    private TextArea textArea; // Where to display comments
+    private int N; // How many comments we have read
+
+    /** Construct a thread */
+    public TranscriptCheck(ChatGateway gateway,TextArea textArea) {
+      this.gateway = gateway;
+      this.textArea = textArea;
+      this.N = 0;
+    }
+
+    /** Run a thread */
+    public void run() {
+      while(true) {
+          if(gateway.getCommentCount() > N) {
+              String newComment = gateway.getComment(N);
+              Platform.runLater(()->textArea.appendText(newComment + "\n"));
+              N++;
+          } else {
+              try {
+                  Thread.sleep(250);
+              } catch(InterruptedException ex) {}
+          }
+      }
+    }
+  }
+
+
+This class has member variables that provide a link to both the ChatGateway and to the TextArea where new comments will be displayed. The run() method in this class implements a simple update loop. On each iteration of the loop the code will query the gateway to see if new comments have come in. If they have, the code will fetch the next comment from the transcript and append it to the text area. If no new comments have come in, the thread will sleep for 1/4 of a second. After waking up from its sleep, the thread will check again to see if new comments are available.
+
+Getting everything set up
+The initialize method for the GUI's controller class handles the work needed to get everything up and running. The code here will set up the gateway, prompt the user to enter a handle, send the handle to the gateway, and then launch the transcript update thread.
+
+
+
+
+public void initialize(URL url, ResourceBundle rb) {
+    gateway = new ChatGateway(textArea);
+
+    // Put up a dialog to get a handle from the user
+    TextInputDialog dialog = new TextInputDialog();
+    dialog.setTitle("Start Chat");
+    dialog.setHeaderText(null);
+    dialog.setContentText("Enter a handle:");
+
+    Optional<String> result = dialog.showAndWait();
+    result.ifPresent(name -> gateway.sendHandle(name));
+
+    // Start the transcript check thread
+    new Thread(new TranscriptCheck(gateway,textArea)).start();
+}
+
+
+
+Sending comments
+Here is the code for the action method linked to the Send button in the GUI. The code here can be quite simple, since all we have to do is to grab the user's comment from the comment text field and send it down to the gateway. The gateway then takes care of passing the comment along to the server, where it will get added to the transcript.
+
+
+
+
+
+@FXML
+private void sendComment(ActionEvent event) {
+    String text = comment.getText();
+    gateway.sendComment(text);
+}
+
+
+
+
+
+Shortly after the comment arrives at the server, the transcript check thread should notice that a new comment is available and fetch the comment to display in the text area.
+
+The server application
+The chat server application uses the standard architecture for a server application. The server runs a main thread that listens for client connections. As each client connects to the server the server will set up a new thread to handle the conversation with that client and then go back to listening for new connections.
+
+Almost all server applications need to interact with a shared pool of data. That shared data pool in the case of the chat server is a class that tracks the contents of the chat transcript:
+
+
+
+
+public class Transcript {
+    private List<String> transcript = Collections.synchronizedList(new ArrayList<String>());
+
+    public Transcript() {
+
+    }
+
+    public void addComment(String comment) { transcript.add(comment); }
+    public int getSize() { return transcript.size(); }
+    public String getComment(int n) { return transcript.get(n); }
+}
+
+
+
+Since this Transcript class is going to be accessed from many different client threads, we need to make sure that threads do not conflict with each other when trying to simultaneously access the transcript. One way we could make the Transcript class thread-safe would be to use a lock in its methods or declare its methods to be synchronized. The Transcript class instead makes use of a third option: since all of the class's methods interact with a list of Strings that stores the actual transcript we can instead make sure that the list itself is thread-safe. Fortunately, the java.util.Collections class contains a useful static method, synchronizedList(), that can convert any ordinary list into a thread-safe list that automatically protects all of its methods with locks.
+
+The client thread
+As each client connects to the chat server, the server will set up a thread to handle the conversation with that client. Here is the class that implements this thread.
+
+
+
+
+
+class HandleAClient implements Runnable, ChatConstants {
+    private Socket socket; // A connected socket
+    private Transcript transcript; // Reference to shared transcript
+    private TextArea textArea;
+    private String handle;
+
+    public HandleAClient(Socket socket,Transcript transcript,TextArea textArea) {
+      this.socket = socket;
+      this.transcript = transcript;
+      this.textArea = textArea;
+    }
+
+    public void run() {
+      try {
+        // Create reading and writing streams
+        BufferedReader inputFromClient = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+        PrintWriter outputToClient = new PrintWriter(socket.getOutputStream());
+
+        // Continuously serve the client
+        while (true) {
+          // Receive request code from the client
+          int request = Integer.parseInt(inputFromClient.readLine());
+          // Process request
+          switch(request) {
+              case SEND_HANDLE: {
+                  handle = inputFromClient.readLine();
+                  break;
+              }
+              case SEND_COMMENT: {
+                  String comment = inputFromClient.readLine();
+                  transcript.addComment(handle + "> " + comment);
+                  break;
+              }
+              case GET_COMMENT_COUNT: {
+                  outputToClient.println(transcript.getSize());
+                  outputToClient.flush();
+                  break;
+              }
+              case GET_COMMENT: {
+                  int n = Integer.parseInt(inputFromClient.readLine());
+                  outputToClient.println(transcript.getComment(n));
+                  outputToClient.flush();
+              }
+          }
+        }
+      }
+      catch(IOException ex) {
+          Platform.runLater(()->textArea.appendText("Exception in client thread: "+ex.toString()+"\n"));
+      }
+    }
+  }
+
+
+
+The structure here is quite typical for client handling threads. Once the connection to the client is set up, the thread will enter an infinite loop. On each iteration of the loop the thread will wait for the next request from the client and then serve that request. Since each request is guaranteed to start with a code number that identifies the nature of the request, the logic here simply has to read the first line of the request to get the code number and then use a switch statement to jump to the appropriate logic. When the logic there needs to talk to the transcript to store or fetch some data it will do so.
+
+Note also that this class implements the same ChatConstants interface that the client code uses. This guarantees that both applications will agree on the set of code numbers used in the request-response protocol.

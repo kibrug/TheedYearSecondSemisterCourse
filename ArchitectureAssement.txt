@@ -1,0 +1,11 @@
+Review on Architectural Styles
+
+
+1.Main Program and Subroutine
+2.Client Server n-Tier
+3.Pipes and Filters
+4.Event Based
+5.Process Control
+6.Layered Systems
+7.Databases 
+8.Interpreters and so on
