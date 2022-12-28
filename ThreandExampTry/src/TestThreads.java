@@ -19,13 +19,14 @@ public class TestThreads extends Thread {
         System.out.println("Exiting child thread " + name + ".");
     }
 
-    public static void main(String args[]) {
+    public static void main(String args[]) throws  Exception {
 
         Thread tt1 =new Thread(new TestThreads("1"));
 
         tt1.start();
 
         try {
+            tt1.setName("kkkkk");
             ((Thread) tt1).join();
         } catch (InterruptedException ex) {
             System.out.println("Thread interrupted");
@@ -36,6 +37,11 @@ public class TestThreads extends Thread {
             System.out.println("Main Thread: " + i);
         }
         System.out.println("Main thread exiting.");
+
+        for (int i = 5; i > 0; i--) {
+            System.out.println("Kibru Thread: " + i);
+        }
+        System.out.println("Kibru thread exiting.");
 
     }
 
