@@ -6,7 +6,7 @@ public class PrimeNumberProject {
     public  static  void  main(String[] args) throws  Exception{
         int i,m=0,flag=0;
         Scanner sc = new Scanner(System.in);
-        int n= sc;
+        int n= 4;
         //it is the number to be checked
         m=n/2;
         if(n==0||n==1){

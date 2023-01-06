@@ -8,7 +8,7 @@ public class ClientConnection {
 
         try {
             System.out.println("Connection Waiting.....");
-            Socket ss = new Socket("172.22.48.1", 8080);
+            Socket ss = new Socket("172.22.48.1", 21);
             System.out.println("send and receive data...");
             System.out.println("Connection Starting.....");
             // send and receive data...
